@@ -46,7 +46,7 @@ import Rel8.Schema.Name ( Selects )
 import Rel8.Statement (Statement, statementReturning)
 import Rel8.Table ( Table )
 import Rel8.Table.Cols ( toCols )
-import Rel8.Table.Name ( namesFromLabels )
+import Rel8.Table.Name ( namesFromLabelsHashed )
 import Rel8.Table.Opaleye ( castTable, exprsWithNames )
 import qualified Rel8.Table.Opaleye as T
 import Rel8.Table.Undefined ( undefined )
@@ -70,7 +70,7 @@ ppSelect query = do
       Optimized pq -> (exprs, pq)
   pure $ Opaleye.ppSql $ primSelectWith names (toCols exprs') primQuery'
   where
-    names = namesFromLabels
+    names = namesFromLabelsHashed 63
     never = pure (toPrimExpr false)
 
 

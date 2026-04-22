@@ -161,6 +161,7 @@ module Rel8
   , Name
   , namesFromLabels
   , namesFromLabelsWith
+  , namesFromLabelsHashed
 
     -- * Expressions
   , Expr

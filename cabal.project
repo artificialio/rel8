@@ -7,7 +7,7 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/simmsb/haskell-opaleye
+  location: git@github.com:artificialio/haskell-opaleye.git
   tag: 3f68c94a9b2954c2e65b5ed20cd2b2d3e8ec5ee2
 
 allow-newer: base16:base, base16:deepseq, base16:text
