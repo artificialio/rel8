@@ -358,6 +358,7 @@ module Rel8
 
     -- ** @SELECT@
   , select
+  , selectTruncated
 
     -- ** @INSERT@
   , Insert(..)

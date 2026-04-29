@@ -9,6 +9,7 @@
 
 module Rel8.Statement.Select
   ( select
+  , selectTruncated
   , ppSelect
   , Optimized(..)
   , ppPrimSelect
@@ -42,11 +43,11 @@ import Rel8.Expr.Bool ( false )
 import Rel8.Expr.Opaleye ( toPrimExpr )
 import Rel8.Query ( Query )
 import Rel8.Query.Opaleye ( toOpaleye )
-import Rel8.Schema.Name ( Selects )
+import Rel8.Schema.Name ( Selects, Name )
 import Rel8.Statement (Statement, statementReturning)
-import Rel8.Table ( Table )
-import Rel8.Table.Cols ( toCols )
-import Rel8.Table.Name ( namesFromLabelsHashed )
+import Rel8.Table ( Table, Columns )
+import Rel8.Table.Cols ( Cols, toCols )
+import Rel8.Table.Name ( namesFromLabels, namesFromLabelsHashed )
 import Rel8.Table.Opaleye ( castTable, exprsWithNames )
 import qualified Rel8.Table.Opaleye as T
 import Rel8.Table.Undefined ( undefined )
@@ -59,9 +60,20 @@ import Control.Monad.Trans.State.Strict (State)
 select :: Table Expr a => Query a -> Statement (Query a)
 select query = statementReturning (ppSelect query)
 
+-- | Build a @SELECT@ 'Statement',
+-- but truncate column names to the given size, using the hashing
+-- scheme defined in 'namesFromLabelsHashed'
+--
+-- The size must be larger than 29 (the size of a SHA1 hash in base64 and a separator character)
+-- otherwise you'll get a nonsense name.
+selectTruncated :: Table Expr a => Int -> Query a -> Statement (Query a)
+selectTruncated maxSize query = statementReturning (ppSelect' (namesFromLabelsHashed maxSize) query)
 
 ppSelect :: Table Expr a => Query a -> State Opaleye.Tag Doc
-ppSelect query = do
+ppSelect = ppSelect' namesFromLabels
+
+ppSelect' :: Table Expr a => Cols Name (Columns a) -> Query a -> State Opaleye.Tag Doc
+ppSelect' names query = do
   (exprs, primQuery) <- Opaleye.runSimpleSelect (toOpaleye query)
   let
     (exprs', primQuery') = case optimize primQuery of
@@ -70,9 +82,7 @@ ppSelect query = do
       Optimized pq -> (exprs, pq)
   pure $ Opaleye.ppSql $ primSelectWith names (toCols exprs') primQuery'
   where
-    names = namesFromLabelsHashed 63
     never = pure (toPrimExpr false)
-
 
 ppRows :: Table Expr a => Query a -> State Opaleye.Tag Doc
 ppRows query = case optimize primQuery of
