@@ -36,7 +36,7 @@ import Data.Foldable ( for_ )
 import Data.Fixed (Centi)
 import Data.Functor (void)
 import Data.Int ( Int32, Int64 )
-import Data.List ( nub, sort )
+import Data.List ( isInfixOf, nub, sort )
 import Data.Maybe ( catMaybes )
 import Data.Ratio ((%))
 import Data.Word (Word32)
@@ -69,7 +69,7 @@ import qualified Hasql.Transaction as Hasql
 import qualified Hasql.Transaction.Sessions as Hasql
 
 -- hedgehog
-import Hedgehog ( annotate, failure, property, (===), forAll, cover, diff, evalM, PropertyT, TestT, test, Gen )
+import Hedgehog ( annotate, assert, failure, property, (===), forAll, cover, diff, evalM, PropertyT, TestT, test, Gen )
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
@@ -156,6 +156,7 @@ tests =
     , testSelectArray getTestDatabase
     , testNestedMaybeTable getTestDatabase
     , testEvaluate getTestDatabase
+    , testSelectTruncated getTestDatabase
     , testShowCreateTable getTestDatabase
     ]
   where
@@ -1260,3 +1261,29 @@ testEvaluate = databasePropertyTest "evaluate has the evaluation order we expect
     normalize :: [(x, (Int64, Int64))] -> [(x, (Int64, Int64))]
     normalize [] = []
     normalize xs@((_, (i, _)) : _) = map (fmap (\(a, b) -> (a - i, b - i))) xs
+
+-- Field name is 42 chars, well over 30, so truncation must fire
+data LongLabelTable f = LongLabelTable
+  { aFieldNameDefinitelyLongerThanThirtyChars :: Rel8.Column f Text
+  }
+  deriving stock Generic
+  deriving anyclass Rel8.Rel8able
+
+deriving stock instance Eq (LongLabelTable Result)
+deriving stock instance Ord (LongLabelTable Result)
+deriving stock instance Show (LongLabelTable Result)
+
+
+testSelectTruncated :: IO TmpPostgres.DB -> TestTree
+testSelectTruncated = databasePropertyTest "selectTruncated truncates long column aliases" \transaction -> do
+  rows <- forAll $ Gen.list (Range.linear 0 10) genText
+
+  let q = Rel8.values $ map (\t -> LongLabelTable (Rel8.lit t)) rows
+      sqlText = Rel8.showStatement (Rel8.selectTruncated 30 q)
+  annotate sqlText
+  assert $ not $ "aFieldNameDefinitelyLongerThanThirtyChars" `isInfixOf` sqlText
+
+  transaction do
+    selected <- lift do
+      statement () $ Rel8.run $ Rel8.selectTruncated 30 q
+    sort (map aFieldNameDefinitelyLongerThanThirtyChars selected) === sort rows
