@@ -1264,7 +1264,8 @@ testEvaluate = databasePropertyTest "evaluate has the evaluation order we expect
 
 -- Field name is 42 chars, well over 30, so truncation must fire
 data LongLabelTable f = LongLabelTable
-  { aFieldNameDefinitelyLongerThanThirtyChars :: Rel8.Column f Text
+  { aFieldNameDefinitelyLongerThanThirtyCharsA :: Rel8.Column f Text
+  , aFieldNameDefinitelyLongerThanThirtyCharsB :: Rel8.Column f Text
   }
   deriving stock Generic
   deriving anyclass Rel8.Rel8able
@@ -1276,14 +1277,34 @@ deriving stock instance Show (LongLabelTable Result)
 
 testSelectTruncated :: IO TmpPostgres.DB -> TestTree
 testSelectTruncated = databasePropertyTest "selectTruncated truncates long column aliases" \transaction -> do
-  rows <- forAll $ Gen.list (Range.linear 0 10) genText
+  rows <- forAll $ Gen.list (Range.linear 0 10) ((,) <$> genText <*> genText)
 
-  let q = Rel8.values $ map (\t -> LongLabelTable (Rel8.lit t)) rows
-      sqlText = Rel8.showStatement (Rel8.selectTruncated 30 q)
+  let q = Rel8.values $ map (\(tA, tB) -> LongLabelTable (Rel8.lit tA) (Rel8.lit tB)) rows
+      sqlText = Rel8.showStatement (Rel8.select q)
+      sqlTextTruncated = Rel8.showStatement (Rel8.selectTruncated 30 q)
   annotate sqlText
-  assert $ not $ "aFieldNameDefinitelyLongerThanThirtyChars" `isInfixOf` sqlText
+  annotate sqlTextTruncated
+
+  -- Check that the select has long names (i.e., that selectTruncated has different behaviour)
+  assert $ "aFieldNameDefinitelyLongerThanThirtyCharsA" `isInfixOf` sqlText
+  assert $ "aFieldNameDefinitelyLongerThanThirtyCharsB" `isInfixOf` sqlText
+
+  -- Check that long names do not exist in the truncated version
+  assert $ not $ "aFieldNameDefinitelyLongerThanThirtyCharsA" `isInfixOf` sqlTextTruncated
+  assert $ not $ "aFieldNameDefinitelyLongerThanThirtyCharsB" `isInfixOf` sqlTextTruncated
+
+  -- To generate the SHA1 hashes:
+  --
+  -- $ echo -n "aFieldNameDefinitelyLongerThanThirtyCharsA" | sha1sum | cut -f1 -d' ' | xxd -r -p | base64 
+  -- AgeYzusHGKKXwGlDO/TiBGiZjyo=
+  --
+  -- $ echo -n "aFieldNameDefinitelyLongerThanThirtyCharsB" | sha1sum | cut -f1 -d' ' | xxd -r -p | base64
+  -- F3D97z2DDHelU7w+MH/gOC8murM=
+  assert $ "a_AgeYzusHGKKXwGlDO/TiBGiZjyo=" `isInfixOf` sqlTextTruncated
+  assert $ "a_F3D97z2DDHelU7w+MH/gOC8murM=" `isInfixOf` sqlTextTruncated
 
   transaction do
     selected <- lift do
       statement () $ Rel8.run $ Rel8.selectTruncated 30 q
-    sort (map aFieldNameDefinitelyLongerThanThirtyChars selected) === sort rows
+    sort (map ((,) <$> aFieldNameDefinitelyLongerThanThirtyCharsA <*>  aFieldNameDefinitelyLongerThanThirtyCharsB) selected)
+      === sort rows
